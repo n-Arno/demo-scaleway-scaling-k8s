@@ -33,6 +33,11 @@ resource "scaleway_k8s_pool" "k8s_pool" {
   placement_group_id = scaleway_instance_placement_group.availability_group.id
 }
 
+variable "hide" { # Workaround to hide local-exec output
+  default   = "yes"
+  sensitive = true
+}
+
 resource "null_resource" "kubeconfig" {
   depends_on = [scaleway_k8s_pool.k8s_pool]
   triggers = {
@@ -42,26 +47,29 @@ resource "null_resource" "kubeconfig" {
   }
 
   provisioner "local-exec" {
+    environment = {
+      HIDE_OUTPUT = var.hide # Workaround to hide local-exec output
+    }
     command = <<-EOT
     cat<<EOF>kubeconfig.yaml
     apiVersion: v1
     clusters:
     - cluster:
-        certificate-authority-data: ${ self.triggers.cluster_ca_certificate }
-        server: ${ self.triggers.host }
-      name: ${ scaleway_k8s_cluster.k8s_cluster.name }
+        certificate-authority-data: ${self.triggers.cluster_ca_certificate}
+        server: ${self.triggers.host}
+      name: ${scaleway_k8s_cluster.k8s_cluster.name}
     contexts:
     - context:
-        cluster: ${ scaleway_k8s_cluster.k8s_cluster.name }
+        cluster: ${scaleway_k8s_cluster.k8s_cluster.name}
         user: admin
-      name: admin@${ scaleway_k8s_cluster.k8s_cluster.name }
-    current-context: admin@${ scaleway_k8s_cluster.k8s_cluster.name }
+      name: admin@${scaleway_k8s_cluster.k8s_cluster.name}
+    current-context: admin@${scaleway_k8s_cluster.k8s_cluster.name}
     kind: Config
     preferences: {}
     users:
     - name: admin
       user:
-        token: ${ self.triggers.token }
+        token: ${self.triggers.token}
     EOF
     EOT
   }
@@ -162,8 +170,8 @@ resource "kubernetes_horizontal_pod_autoscaler" "hpa" {
 
     scale_target_ref {
       api_version = "apps/v1"
-      kind = "Deployment"
-      name = "test"
+      kind        = "Deployment"
+      name        = "test"
     }
 
     metric {
