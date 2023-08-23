@@ -3,16 +3,33 @@ resource "scaleway_instance_placement_group" "availability_group" {
   policy_mode = "enforced"
 }
 
+data "scaleway_k8s_version" "latest" {
+  name = "latest"
+}
+
+resource "scaleway_vpc" "kapsule" {
+    name = "vpc_kapsule"
+    tags = ["kapsule"]
+}
+
+resource "scaleway_vpc_private_network" "kapsule" {
+  name   = "pn_kapsule"
+  vpc_id = scaleway_vpc.kapsule.id
+  tags   = ["kapsule"]
+}
+
 resource "scaleway_k8s_cluster" "k8s_cluster" {
   name                        = "demo-cluster"
-  version                     = "1.24.7"
-  cni                         = "calico"
+  version                     = data.scaleway_k8s_version.latest.name
+  cni                         = "cilium"
+  private_network_id          = scaleway_vpc_private_network.kapsule.id
   delete_additional_resources = true
+  depends_on                  = [scaleway_vpc_private_network.kapsule]
 
   autoscaler_config {
     disable_scale_down               = false
     scale_down_unneeded_time         = "2m"
-    scale_down_delay_after_add       = "2m"
+    scale_down_delay_after_add       = "30m"
     scale_down_utilization_threshold = 0.5
     estimator                        = "binpacking"
     expander                         = "random"
@@ -81,9 +98,9 @@ provider "kubernetes" {
   cluster_ca_certificate = base64decode(null_resource.kubeconfig.triggers.cluster_ca_certificate)
 }
 
-resource "time_sleep" "wait_for_cluster" { # wait 2 minutes for cluster to stabilize
+resource "time_sleep" "wait_for_cluster" { # wait 1 minute for cluster to stabilize (CNI, etc...)
   depends_on      = [null_resource.kubeconfig]
-  create_duration = "120s"
+  create_duration = "60s"
 }
 
 resource "kubernetes_deployment" "deployment" {
@@ -157,7 +174,7 @@ resource "kubernetes_service" "service" {
   }
 }
 
-resource "kubernetes_horizontal_pod_autoscaler" "hpa" {
+resource "kubernetes_horizontal_pod_autoscaler_v2" "hpa" {
   depends_on = [kubernetes_deployment.deployment]
   metadata {
     name      = "test"
